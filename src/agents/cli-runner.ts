@@ -6,6 +6,7 @@ import { shouldLogVerbose } from "../globals.js";
 import { isTruthyEnvValue } from "../infra/env.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { getProcessSupervisor } from "../process/supervisor/index.js";
+import { buildTopicSessionWorkspaceNotes } from "../topics/branch-sync.js";
 import { resolveSessionAgentIds } from "./agent-scope.js";
 import { makeBootstrapWarn, resolveBootstrapContextForRun } from "./bootstrap-files.js";
 import { resolveCliBackendConfig } from "./cli-backends.js";
@@ -26,6 +27,7 @@ import {
 } from "./cli-runner/helpers.js";
 import { resolveOpenClawDocsPath } from "./docs-path.js";
 import { FailoverError, resolveFailoverStatus } from "./failover-error.js";
+import { buildAgentFamilyWorkspaceNotes } from "./family-soul.js";
 import { classifyFailoverReason, isFailoverErrorMessage } from "./pi-embedded-helpers.js";
 import type { EmbeddedPiRunResult } from "./pi-embedded-runner.js";
 import { redactRunIdentifier, resolveRunWorkspaceDir } from "./workspace-run.js";
@@ -107,6 +109,15 @@ export async function runCliAgent(params: {
     cwd: process.cwd(),
     moduleUrl: import.meta.url,
   });
+  const topicWorkspaceNotes = await buildTopicSessionWorkspaceNotes({
+    workspaceDir,
+    sessionKey: params.sessionKey,
+  });
+  const familyWorkspaceNotes = buildAgentFamilyWorkspaceNotes({
+    config: params.config,
+    agentId: sessionAgentId,
+  });
+  const workspaceNotes = [...(familyWorkspaceNotes ?? []), ...(topicWorkspaceNotes ?? [])];
   const systemPrompt = buildSystemPrompt({
     workspaceDir,
     config: params.config,
@@ -115,6 +126,7 @@ export async function runCliAgent(params: {
     ownerNumbers: params.ownerNumbers,
     heartbeatPrompt,
     docsPath: docsPath ?? undefined,
+    workspaceNotes: workspaceNotes.length > 0 ? workspaceNotes : undefined,
     tools: [],
     contextFiles,
     modelDisplay,

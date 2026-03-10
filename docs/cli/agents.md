@@ -1,5 +1,5 @@
 ---
-summary: "CLI reference for `openclaw agents` (list/add/delete/set identity)"
+summary: "CLI reference for `openclaw agents` (list/add/delete/set identity/set soul)"
 read_when:
   - You want multiple isolated agents (workspaces + routing + auth)
 title: "agents"
@@ -18,7 +18,8 @@ Related:
 
 ```bash
 openclaw agents list
-openclaw agents add work --workspace ~/.openclaw/workspace-work
+openclaw agents add work --workspace ~/.openclaw/workspace-work --purpose "Research and test sibling workflows."
+openclaw agents set-soul --agent work --purpose "Practice new agent features safely before rollout."
 openclaw agents set-identity --workspace ~/.openclaw/workspace --from-identity
 openclaw agents set-identity --agent main --avatar avatars/openclaw.png
 openclaw agents delete work
@@ -73,3 +74,18 @@ Config sample:
   },
 }
 ```
+
+## Set soul purpose
+
+`set-soul` updates the family identity block in the agent's `SOUL.md`.
+
+```bash
+openclaw agents set-soul --agent work --purpose "Explore child functionality and report findings."
+```
+
+This keeps each agent aware of:
+
+- its family/root relationship
+- sibling agents
+- shared tool/model baseline
+- its current purpose

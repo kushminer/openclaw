@@ -55,6 +55,7 @@ export function buildSystemPrompt(params: {
   ownerNumbers?: string[];
   heartbeatPrompt?: string;
   docsPath?: string;
+  workspaceNotes?: string[];
   tools: AgentTool[];
   contextFiles?: EmbeddedContextFile[];
   modelDisplay: string;
@@ -95,6 +96,7 @@ export function buildSystemPrompt(params: {
     userTimezone,
     userTime,
     userTimeFormat,
+    workspaceNotes: params.workspaceNotes,
     contextFiles: params.contextFiles,
     ttsHint,
     memoryCitationsMode: params.config?.memory?.citations,

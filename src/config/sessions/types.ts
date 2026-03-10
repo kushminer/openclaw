@@ -93,6 +93,14 @@ export type SessionEntry = {
   compactionCount?: number;
   memoryFlushAt?: number;
   memoryFlushCompactionCount?: number;
+  /** Last time (ms) a topic session was synced into layered topic summaries. */
+  topicLastSummarySyncAt?: number;
+  /** Latest layered summary path relative to the workspace root. */
+  topicLatestSummaryPath?: string;
+  /** Latest raw snapshot path relative to the workspace root. */
+  topicLatestRawPath?: string;
+  /** Latest layered summary ordinal for this topic session. */
+  topicLatestSummaryLayer?: number;
   cliSessionIds?: Record<string, string>;
   claudeCliSessionId?: string;
   label?: string;

@@ -145,6 +145,24 @@ const entries: SubCliEntry[] = [
     },
   },
   {
+    name: "talk",
+    description: "Open a terminal chat with a specific agent",
+    hasSubcommands: false,
+    register: async (program) => {
+      const mod = await import("../talk-cli.js");
+      mod.registerTalkCli(program);
+    },
+  },
+  {
+    name: "topic",
+    description: "Manage persistent topic sessions and topic terminals",
+    hasSubcommands: true,
+    register: async (program) => {
+      const mod = await import("../topic-cli.js");
+      mod.registerTopicCli(program);
+    },
+  },
+  {
     name: "cron",
     description: "Manage cron jobs via the Gateway scheduler",
     hasSubcommands: true,

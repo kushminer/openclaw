@@ -51,7 +51,7 @@ function buildMemorySection(params: {
   }
   const lines = [
     "## Memory Recall",
-    "Before answering anything about prior work, decisions, dates, people, preferences, or todos: run memory_search on MEMORY.md + memory/*.md; then use memory_get to pull only the needed lines. If low confidence after search, say you checked.",
+    "Before answering anything about prior work, decisions, dates, people, preferences, or todos: run memory_search on workspace memory plus shared family memory; then use memory_get to pull only the needed lines. If low confidence after search, say you checked.",
   ];
   if (params.citationsMode === "off") {
     lines.push(

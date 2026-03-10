@@ -177,7 +177,7 @@ export const FIELD_HELP: Record<string, string> = {
   "agents.defaults.memorySearch.sources":
     'Sources to index for memory search (default: ["memory"]; add "sessions" to include session transcripts).',
   "agents.defaults.memorySearch.extraPaths":
-    "Extra paths to include in memory search (directories or .md files; relative paths resolved from workspace).",
+    "Extra paths to include in memory search (directories or .md files; relative paths resolved from workspace; shared family memory paths are included automatically).",
   "agents.defaults.memorySearch.experimental.sessionMemory":
     "Enable experimental session transcript indexing for memory search (default: false).",
   "agents.defaults.memorySearch.provider":

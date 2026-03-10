@@ -191,7 +191,9 @@ export async function agentCommand(
     throw new Error("Message (--message) is required");
   }
   if (!opts.to && !opts.sessionId && !opts.sessionKey && !opts.agentId) {
-    throw new Error("Pass --to <E.164>, --session-id, or --agent to choose a session");
+    throw new Error(
+      "Pass --to <E.164>, --session-id, --session-key, or --agent to choose a session",
+    );
   }
 
   const cfg = loadConfig();
