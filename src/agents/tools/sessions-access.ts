@@ -1,12 +1,16 @@
 import type { OpenClawConfig } from "../../config/config.js";
-import { isSubagentSessionKey, resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
+import {
+  isSubagentSessionKey,
+  normalizeAgentId,
+  resolveAgentIdFromSessionKey,
+} from "../../routing/session-key.js";
 import {
   listSpawnedSessionKeys,
   resolveInternalSessionKey,
   resolveMainSessionAlias,
 } from "./sessions-resolution.js";
 
-export type SessionToolsVisibility = "self" | "tree" | "agent" | "all";
+export type SessionToolsVisibility = "none" | "siblings" | "self" | "tree" | "agent" | "all";
 
 export type AgentToAgentPolicy = {
   enabled: boolean;
@@ -24,10 +28,17 @@ export function resolveSessionToolsVisibility(cfg: OpenClawConfig): SessionTools
   const raw = (cfg.tools as { sessions?: { visibility?: unknown } } | undefined)?.sessions
     ?.visibility;
   const value = typeof raw === "string" ? raw.trim().toLowerCase() : "";
-  if (value === "self" || value === "tree" || value === "agent" || value === "all") {
+  if (
+    value === "none" ||
+    value === "siblings" ||
+    value === "self" ||
+    value === "tree" ||
+    value === "agent" ||
+    value === "all"
+  ) {
     return value;
   }
-  return "tree";
+  return "siblings";
 }
 
 export function resolveEffectiveSessionToolsVisibility(params: {
@@ -47,6 +58,23 @@ export function resolveEffectiveSessionToolsVisibility(params: {
 
 export function resolveSandboxSessionToolsVisibility(cfg: OpenClawConfig): "spawned" | "all" {
   return cfg.agents?.defaults?.sandbox?.sessionToolsVisibility ?? "spawned";
+}
+
+export function resolveConfiguredSiblingAgentIds(cfg: OpenClawConfig): Set<string> {
+  const siblingAgentIds = new Set<string>();
+  const agentList = Array.isArray(cfg.agents?.list)
+    ? (cfg.agents?.list as Array<{ id?: unknown }>)
+    : [];
+  for (const entry of agentList) {
+    const id = typeof entry?.id === "string" ? normalizeAgentId(entry.id) : "";
+    if (id) {
+      siblingAgentIds.add(id);
+    }
+  }
+  if (siblingAgentIds.size === 0) {
+    siblingAgentIds.add("main");
+  }
+  return siblingAgentIds;
 }
 
 export function resolveSandboxedSessionToolContext(params: {
@@ -158,9 +186,13 @@ function crossVisibilityMessage(action: SessionAccessAction): string {
     return "Session history visibility is restricted. Set tools.sessions.visibility=all to allow cross-agent access.";
   }
   if (action === "send") {
-    return "Session send visibility is restricted. Set tools.sessions.visibility=all to allow cross-agent access.";
+    return "Session send visibility is restricted. Set tools.sessions.visibility=siblings (configured agents only) or tools.sessions.visibility=all (any agent).";
   }
   return "Session list visibility is restricted. Set tools.sessions.visibility=all to allow cross-agent access.";
+}
+
+function siblingsVisibilityMessage(): string {
+  return "Session send target is outside configured sibling agents (tools.sessions.visibility=siblings). Set tools.sessions.visibility=all to allow this target.";
 }
 
 function selfVisibilityMessage(action: SessionAccessAction): string {
@@ -176,19 +208,46 @@ export async function createSessionVisibilityGuard(params: {
   requesterSessionKey: string;
   visibility: SessionToolsVisibility;
   a2aPolicy: AgentToAgentPolicy;
+  siblingAgentIds?: ReadonlySet<string>;
 }): Promise<{
   check: (targetSessionKey: string) => SessionAccessResult;
 }> {
   const requesterAgentId = resolveAgentIdFromSessionKey(params.requesterSessionKey);
-  const spawnedKeys =
-    params.visibility === "tree"
-      ? await listSpawnedSessionKeys({ requesterSessionKey: params.requesterSessionKey })
-      : null;
+  const usesTreeScopedSameAgentVisibility =
+    params.visibility === "tree" ||
+    params.visibility === "siblings" ||
+    params.visibility === "none";
+  const spawnedKeys = usesTreeScopedSameAgentVisibility
+    ? await listSpawnedSessionKeys({ requesterSessionKey: params.requesterSessionKey })
+    : null;
 
   const check = (targetSessionKey: string): SessionAccessResult => {
     const targetAgentId = resolveAgentIdFromSessionKey(targetSessionKey);
     const isCrossAgent = targetAgentId !== requesterAgentId;
     if (isCrossAgent) {
+      if (params.action === "send") {
+        if (params.visibility === "all") {
+          return { allowed: true };
+        }
+        if (params.visibility === "siblings") {
+          const siblingAgentIds = params.siblingAgentIds;
+          const requesterIsSibling = siblingAgentIds?.has(requesterAgentId) ?? false;
+          const targetIsSibling = siblingAgentIds?.has(targetAgentId) ?? false;
+          if (requesterIsSibling && targetIsSibling) {
+            return { allowed: true };
+          }
+          return {
+            allowed: false,
+            status: "forbidden",
+            error: siblingsVisibilityMessage(),
+          };
+        }
+        return {
+          allowed: false,
+          status: "forbidden",
+          error: crossVisibilityMessage(params.action),
+        };
+      }
       if (params.visibility !== "all") {
         return {
           allowed: false,
@@ -213,7 +272,10 @@ export async function createSessionVisibilityGuard(params: {
       return { allowed: true };
     }
 
-    if (params.visibility === "self" && targetSessionKey !== params.requesterSessionKey) {
+    const sameAgentVisibility =
+      params.visibility === "siblings" || params.visibility === "none" ? "tree" : params.visibility;
+
+    if (sameAgentVisibility === "self" && targetSessionKey !== params.requesterSessionKey) {
       return {
         allowed: false,
         status: "forbidden",
@@ -222,7 +284,7 @@ export async function createSessionVisibilityGuard(params: {
     }
 
     if (
-      params.visibility === "tree" &&
+      sameAgentVisibility === "tree" &&
       targetSessionKey !== params.requesterSessionKey &&
       !spawnedKeys?.has(targetSessionKey)
     ) {

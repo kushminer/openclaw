@@ -1,7 +1,9 @@
 import crypto from "node:crypto";
 import { Type } from "@sinclair/typebox";
+import { buildSpawnedCliCommand, launchCommandInTerminal } from "../../cli/terminal-launch.js";
 import { loadConfig } from "../../config/config.js";
 import { callGateway } from "../../gateway/call.js";
+import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { normalizeAgentId, resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
 import { SESSION_LABEL_MAX_LENGTH } from "../../sessions/session-label.js";
 import {
@@ -15,6 +17,7 @@ import {
   createSessionVisibilityGuard,
   createAgentToAgentPolicy,
   extractAssistantText,
+  resolveConfiguredSiblingAgentIds,
   resolveEffectiveSessionToolsVisibility,
   resolveSessionReference,
   resolveSandboxedSessionToolContext,
@@ -31,6 +34,49 @@ const SessionsSendToolSchema = Type.Object({
   message: Type.String(),
   timeoutSeconds: Type.Optional(Type.Number({ minimum: 0 })),
 });
+
+const SESSIONS_SEND_TERMINAL_SPAWN_DEBOUNCE_MS = 30_000;
+const recentTerminalSpawnsBySession = new Map<string, number>();
+const sessionsSendLog = createSubsystemLogger("agents/sessions-send");
+
+function shouldAutoSpawnA2ATerminal(): boolean {
+  if (process.env.VITEST === "true" || process.env.NODE_ENV === "test") {
+    return false;
+  }
+  if (process.env.OPENCLAW_DISABLE_A2A_TERMINAL_SPAWN === "1") {
+    return false;
+  }
+  return Boolean(process.stdin.isTTY || process.stdout.isTTY);
+}
+
+async function maybeSpawnTerminalForSession(params: { sessionKey: string }) {
+  if (!shouldAutoSpawnA2ATerminal()) {
+    return;
+  }
+  const now = Date.now();
+  const lastSpawnedAt = recentTerminalSpawnsBySession.get(params.sessionKey) ?? 0;
+  if (now - lastSpawnedAt < SESSIONS_SEND_TERMINAL_SPAWN_DEBOUNCE_MS) {
+    return;
+  }
+  recentTerminalSpawnsBySession.set(params.sessionKey, now);
+  const command = buildSpawnedCliCommand({
+    cwd: process.cwd(),
+    cliArgs: ["tui", "--session", params.sessionKey, "--history-limit", "1"],
+  });
+  try {
+    const launched = await launchCommandInTerminal(command);
+    if (!launched) {
+      sessionsSendLog.debug("A2A terminal auto-spawn did not launch", {
+        targetSessionKey: params.sessionKey,
+      });
+    }
+  } catch (err) {
+    sessionsSendLog.warn("A2A terminal auto-spawn failed", {
+      targetSessionKey: params.sessionKey,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 export function createSessionsSendTool(opts?: {
   agentSessionKey?: string;
@@ -55,6 +101,7 @@ export function createSessionsSendTool(opts?: {
         });
 
       const a2aPolicy = createAgentToAgentPolicy(cfg);
+      const siblingAgentIds = resolveConfiguredSiblingAgentIds(cfg);
       const sessionVisibility = resolveEffectiveSessionToolsVisibility({
         cfg,
         sandboxed: opts?.sandboxed === true,
@@ -84,24 +131,6 @@ export function createSessionsSendTool(opts?: {
             status: "forbidden",
             error: "Sandboxed sessions_send label lookup is limited to this agent",
           });
-        }
-
-        if (requesterAgentId && requestedAgentId && requestedAgentId !== requesterAgentId) {
-          if (!a2aPolicy.enabled) {
-            return jsonResult({
-              runId: crypto.randomUUID(),
-              status: "forbidden",
-              error:
-                "Agent-to-agent messaging is disabled. Set tools.agentToAgent.enabled=true to allow cross-agent sends.",
-            });
-          }
-          if (!a2aPolicy.isAllowed(requesterAgentId, requestedAgentId)) {
-            return jsonResult({
-              runId: crypto.randomUUID(),
-              status: "forbidden",
-              error: "Agent-to-agent messaging denied by tools.agentToAgent.allow.",
-            });
-          }
         }
 
         const resolveParams: Record<string, unknown> = {
@@ -201,6 +230,7 @@ export function createSessionsSendTool(opts?: {
         requesterSessionKey: effectiveRequesterKey,
         visibility: sessionVisibility,
         a2aPolicy,
+        siblingAgentIds,
       });
       const access = visibilityGuard.check(resolvedKey);
       if (!access.allowed) {
@@ -210,6 +240,12 @@ export function createSessionsSendTool(opts?: {
           error: access.error,
           sessionKey: displayKey,
         });
+      }
+      const requesterAgentId = resolveAgentIdFromSessionKey(effectiveRequesterKey);
+      const targetAgentId = resolveAgentIdFromSessionKey(resolvedKey);
+      const isCrossAgentSend = requesterAgentId !== targetAgentId;
+      if (isCrossAgentSend) {
+        await maybeSpawnTerminalForSession({ sessionKey: displayKey });
       }
 
       const agentMessageContext = buildAgentToAgentMessageContext({

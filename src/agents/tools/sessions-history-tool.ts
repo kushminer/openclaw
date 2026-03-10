@@ -10,6 +10,7 @@ import { jsonResult, readStringParam } from "./common.js";
 import {
   createSessionVisibilityGuard,
   createAgentToAgentPolicy,
+  resolveConfiguredSiblingAgentIds,
   resolveEffectiveSessionToolsVisibility,
   resolveSessionReference,
   resolveSandboxedSessionToolContext,
@@ -214,6 +215,7 @@ export function createSessionsHistoryTool(opts?: {
       const displayKey = visibleSession.displayKey;
 
       const a2aPolicy = createAgentToAgentPolicy(cfg);
+      const siblingAgentIds = resolveConfiguredSiblingAgentIds(cfg);
       const visibility = resolveEffectiveSessionToolsVisibility({
         cfg,
         sandboxed: opts?.sandboxed === true,
@@ -223,6 +225,7 @@ export function createSessionsHistoryTool(opts?: {
         requesterSessionKey: effectiveRequesterKey,
         visibility,
         a2aPolicy,
+        siblingAgentIds,
       });
       const access = visibilityGuard.check(resolvedKey);
       if (!access.allowed) {

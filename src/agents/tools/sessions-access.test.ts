@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
+
+const callGatewayMock = vi.fn(async () => ({ sessions: [] as Array<{ key: string }> }));
+vi.mock("../../gateway/call.js", () => ({
+  callGateway: (opts: unknown) => callGatewayMock(opts),
+}));
+
 import {
   createAgentToAgentPolicy,
   createSessionVisibilityGuard,
@@ -10,13 +16,13 @@ import {
 } from "./sessions-access.js";
 
 describe("resolveSessionToolsVisibility", () => {
-  it("defaults to tree when unset or invalid", () => {
-    expect(resolveSessionToolsVisibility({} as unknown as OpenClawConfig)).toBe("tree");
+  it("defaults to siblings when unset or invalid", () => {
+    expect(resolveSessionToolsVisibility({} as unknown as OpenClawConfig)).toBe("siblings");
     expect(
       resolveSessionToolsVisibility({
         tools: { sessions: { visibility: "invalid" } },
       } as unknown as OpenClawConfig),
-    ).toBe("tree");
+    ).toBe("siblings");
   });
 
   it("accepts known visibility values case-insensitively", () => {
@@ -25,6 +31,11 @@ describe("resolveSessionToolsVisibility", () => {
         tools: { sessions: { visibility: "ALL" } },
       } as unknown as OpenClawConfig),
     ).toBe("all");
+    expect(
+      resolveSessionToolsVisibility({
+        tools: { sessions: { visibility: "SIBLINGS" } },
+      } as unknown as OpenClawConfig),
+    ).toBe("siblings");
   });
 });
 
@@ -108,7 +119,7 @@ describe("createAgentToAgentPolicy", () => {
 });
 
 describe("createSessionVisibilityGuard", () => {
-  it("blocks cross-agent send when agent-to-agent is disabled", async () => {
+  it("allows cross-agent send when visibility is all", async () => {
     const guard = await createSessionVisibilityGuard({
       action: "send",
       requesterSessionKey: "agent:main:main",
@@ -116,11 +127,24 @@ describe("createSessionVisibilityGuard", () => {
       a2aPolicy: createAgentToAgentPolicy({} as unknown as OpenClawConfig),
     });
 
-    expect(guard.check("agent:ops:main")).toEqual({
+    expect(guard.check("agent:ops:main")).toEqual({ allowed: true });
+  });
+
+  it("allows cross-agent send only within configured siblings when visibility=siblings", async () => {
+    const guard = await createSessionVisibilityGuard({
+      action: "send",
+      requesterSessionKey: "agent:clio:main",
+      visibility: "siblings",
+      a2aPolicy: createAgentToAgentPolicy({} as unknown as OpenClawConfig),
+      siblingAgentIds: new Set(["clio", "wren"]),
+    });
+
+    expect(guard.check("agent:wren:main")).toEqual({ allowed: true });
+    expect(guard.check("agent:outsider:main")).toEqual({
       allowed: false,
       status: "forbidden",
       error:
-        "Agent-to-agent messaging is disabled. Set tools.agentToAgent.enabled=true to allow cross-agent sends.",
+        "Session send target is outside configured sibling agents (tools.sessions.visibility=siblings). Set tools.sessions.visibility=all to allow this target.",
     });
   });
 

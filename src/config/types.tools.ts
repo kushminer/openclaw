@@ -165,7 +165,7 @@ export type ToolLoopDetectionConfig = {
   detectors?: ToolLoopDetectionDetectorConfig;
 };
 
-export type SessionsToolsVisibility = "self" | "tree" | "agent" | "all";
+export type SessionsToolsVisibility = "none" | "siblings" | "self" | "tree" | "agent" | "all";
 
 export type ToolPolicyConfig = {
   allow?: string[];
@@ -563,14 +563,17 @@ export type ToolsConfig = {
    * Session tool visibility controls which sessions can be targeted by session tools
    * (sessions_list, sessions_history, sessions_send).
    *
-   * Default: "tree" (current session + spawned subagent sessions).
+   * Default: "siblings" for sessions_send cross-agent behavior.
+   * For sessions_list/sessions_history, "siblings" behaves like legacy "tree".
    */
   sessions?: {
     /**
+     * - "none": legacy restrictive behavior for sessions_send cross-agent access
+     * - "siblings": allow cross-agent sessions_send only between configured agents in agents.list (default)
      * - "self": only the current session
-     * - "tree": current session + sessions spawned by this session (default)
+     * - "tree": current session + sessions spawned by this session
      * - "agent": any session belonging to the current agent id (can include other users)
-     * - "all": any session (cross-agent still requires tools.agentToAgent)
+     * - "all": any session
      */
     visibility?: SessionsToolsVisibility;
   };

@@ -15,6 +15,7 @@ import {
   createAgentToAgentPolicy,
   classifySessionKind,
   deriveChannel,
+  resolveConfiguredSiblingAgentIds,
   resolveDisplaySessionKey,
   resolveEffectiveSessionToolsVisibility,
   resolveInternalSessionKey,
@@ -90,11 +91,13 @@ export function createSessionsListTool(opts?: {
       const sessions = Array.isArray(list?.sessions) ? list.sessions : [];
       const storePath = typeof list?.path === "string" ? list.path : undefined;
       const a2aPolicy = createAgentToAgentPolicy(cfg);
+      const siblingAgentIds = resolveConfiguredSiblingAgentIds(cfg);
       const visibilityGuard = await createSessionVisibilityGuard({
         action: "list",
         requesterSessionKey: effectiveRequesterKey,
         visibility,
         a2aPolicy,
+        siblingAgentIds,
       });
       const rows: SessionListRow[] = [];
       const historyTargets: Array<{ row: SessionListRow; resolvedKey: string }> = [];
