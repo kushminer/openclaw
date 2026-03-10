@@ -9,6 +9,65 @@ import { theme } from "../terminal/theme.js";
 import { runTui } from "../tui/tui.js";
 import { formatHelpExamples } from "./help-format.js";
 import { parseTimeoutMs } from "./parse-timeout.js";
+import { buildSpawnedCliCommand, launchCommandInTerminal } from "./terminal-launch.js";
+
+type TalkOptions = {
+  url?: string;
+  token?: string;
+  password?: string;
+  deliver?: boolean;
+  thinking?: string;
+  message?: string;
+  timeoutMs?: string;
+  historyLimit?: string;
+  all?: boolean;
+  spawn?: boolean;
+};
+
+function parseHistoryLimit(raw: unknown): number | undefined {
+  const candidate =
+    typeof raw === "number" && Number.isFinite(raw)
+      ? String(Math.trunc(raw))
+      : typeof raw === "string"
+        ? raw
+        : "200";
+  const parsed = Number.parseInt(candidate, 10);
+  return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+function buildTuiCliArgs(params: {
+  sessionKey: string;
+  opts: TalkOptions;
+  timeoutMs?: number;
+  historyLimit?: number;
+}): string[] {
+  const args = ["tui", "--session", params.sessionKey];
+  if (params.opts.url) {
+    args.push("--url", params.opts.url);
+  }
+  if (params.opts.token) {
+    args.push("--token", params.opts.token);
+  }
+  if (params.opts.password) {
+    args.push("--password", params.opts.password);
+  }
+  if (params.opts.deliver) {
+    args.push("--deliver");
+  }
+  if (params.opts.thinking) {
+    args.push("--thinking", params.opts.thinking);
+  }
+  if (params.opts.message) {
+    args.push("--message", params.opts.message);
+  }
+  if (params.timeoutMs !== undefined) {
+    args.push("--timeout-ms", String(params.timeoutMs));
+  }
+  if (params.historyLimit !== undefined) {
+    args.push("--history-limit", String(params.historyLimit));
+  }
+  return args;
+}
 
 export function registerTalkCli(program: Command) {
   program
@@ -22,6 +81,8 @@ export function registerTalkCli(program: Command) {
     .option("--message <text>", "Send an initial message after connecting")
     .option("--timeout-ms <ms>", "Agent timeout in ms")
     .option("--history-limit <n>", "History entries to load", "200")
+    .option("--spawn", "Open the selected chat in a new terminal", false)
+    .option("--all", "Open one terminal per configured agent", false)
     .addHelpText(
       "after",
       () =>
@@ -30,16 +91,70 @@ ${theme.heading("Examples:")}
 ${formatHelpExamples([
   ["openclaw talk wren", "Open a chat with agent Wren."],
   ["openclaw talk", "Pick an agent from a list."],
+  ["openclaw talk --all", "Open one terminal per configured agent."],
+  ["openclaw talk clio --spawn", "Open Clio in a new terminal window."],
   ['openclaw talk clio --message "What are you working on?"', "Chat with Clio, send a message."],
   ["openclaw talk wren --thinking high", "Chat with Wren using high thinking."],
 ])}
 
 ${theme.muted("Docs:")} ${formatDocsLink("/cli/talk", "docs.openclaw.ai/cli/talk")}`,
     )
-    .action(async (agentArg, opts) => {
+    .action(async (agentArg, rawOpts) => {
       try {
+        const opts = rawOpts as TalkOptions;
         const config = loadConfig();
         const agents = listAgentEntries(config);
+        const timeoutMs = parseTimeoutMs(opts.timeoutMs);
+        if (opts.timeoutMs !== undefined && timeoutMs === undefined) {
+          defaultRuntime.error(
+            `warning: invalid --timeout-ms "${String(opts.timeoutMs)}"; ignoring`,
+          );
+        }
+        const historyLimit = parseHistoryLimit(opts.historyLimit);
+
+        if (opts.all === true) {
+          if (agentArg) {
+            defaultRuntime.error("Cannot combine [agent] with --all. Use `openclaw talk --all`.");
+            defaultRuntime.exit(1);
+            return;
+          }
+          if (agents.length === 0) {
+            defaultRuntime.error("No agents configured. Run `openclaw agents add` first.");
+            defaultRuntime.exit(1);
+            return;
+          }
+
+          const seen = new Set<string>();
+          const launches: Array<{ agentId: string; command: string; launched: boolean }> = [];
+          for (const agent of agents) {
+            const agentId = normalizeAgentId(agent.id);
+            if (!agentId || seen.has(agentId)) {
+              continue;
+            }
+            seen.add(agentId);
+            const sessionKey = buildAgentMainSessionKey({ agentId });
+            const command = buildSpawnedCliCommand({
+              cwd: process.cwd(),
+              cliArgs: buildTuiCliArgs({ sessionKey, opts, timeoutMs, historyLimit }),
+            });
+            const launched = await launchCommandInTerminal(command);
+            launches.push({ agentId, command, launched });
+          }
+
+          const failures = launches.filter((entry) => !entry.launched);
+          if (failures.length === 0) {
+            defaultRuntime.log(
+              `Opened ${launches.length} agent terminals: ${launches.map((entry) => entry.agentId).join(", ")}`,
+            );
+            return;
+          }
+          defaultRuntime.error("Failed to open one or more terminal windows.");
+          for (const failure of failures) {
+            defaultRuntime.log(`Run manually for ${failure.agentId}: ${failure.command}`);
+          }
+          defaultRuntime.exit(1);
+          return;
+        }
 
         let agentId: string;
 
@@ -87,24 +202,32 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/talk", "docs.openclaw.ai/cli/talk
         }
 
         const sessionKey = buildAgentMainSessionKey({ agentId });
-        const timeoutMs = parseTimeoutMs(opts.timeoutMs);
-        if (opts.timeoutMs !== undefined && timeoutMs === undefined) {
-          defaultRuntime.error(
-            `warning: invalid --timeout-ms "${String(opts.timeoutMs)}"; ignoring`,
-          );
+        if (opts.spawn === true) {
+          const command = buildSpawnedCliCommand({
+            cwd: process.cwd(),
+            cliArgs: buildTuiCliArgs({ sessionKey, opts, timeoutMs, historyLimit }),
+          });
+          const launched = await launchCommandInTerminal(command);
+          if (launched) {
+            defaultRuntime.log(`Opened terminal for ${agentId} (${sessionKey})`);
+            return;
+          }
+          defaultRuntime.error("Failed to open a new terminal window automatically.");
+          defaultRuntime.log(`Run this manually: ${command}`);
+          defaultRuntime.exit(1);
+          return;
         }
-        const historyLimit = Number.parseInt(String(opts.historyLimit ?? "200"), 10);
 
         await runTui({
-          url: opts.url as string | undefined,
-          token: opts.token as string | undefined,
-          password: opts.password as string | undefined,
+          url: opts.url,
+          token: opts.token,
+          password: opts.password,
           session: sessionKey,
           deliver: Boolean(opts.deliver),
-          thinking: opts.thinking as string | undefined,
-          message: opts.message as string | undefined,
+          thinking: opts.thinking,
+          message: opts.message,
           timeoutMs,
-          historyLimit: Number.isNaN(historyLimit) ? undefined : historyLimit,
+          historyLimit,
         });
       } catch (err) {
         defaultRuntime.error(String(err));

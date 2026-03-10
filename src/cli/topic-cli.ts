@@ -1,6 +1,4 @@
 import crypto from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
 import { cancel, isCancel, text } from "@clack/prompts";
 import type { Command } from "commander";
 import { resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
@@ -16,7 +14,6 @@ import {
 } from "../config/sessions.js";
 import { callGateway } from "../gateway/call.js";
 import { formatTimeAgo } from "../infra/format-time/format-relative.ts";
-import { runCommandWithTimeout } from "../process/exec.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import { defaultRuntime } from "../runtime.js";
 import { isRich, theme } from "../terminal/theme.js";
@@ -43,6 +40,7 @@ import {
 } from "../topics/summary-chain.js";
 import { runTui } from "../tui/tui.js";
 import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
+import { buildSpawnedCliCommand, launchCommandInTerminal } from "./terminal-launch.js";
 
 type TopicRow = {
   topicSlug: string;
@@ -71,14 +69,6 @@ const CONFLICT_TOPIC_PAD = 24;
 const CONFLICT_STATUS_PAD = 10;
 const CONFLICT_KIND_PAD = 10;
 const CONFLICT_AGE_PAD = 12;
-
-function shellEscape(value: string): string {
-  return `'${value.replaceAll("'", "'\\''")}'`;
-}
-
-function escapeAppleScript(value: string): string {
-  return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
-}
 
 function renderTopicRows(rows: TopicRow[]): void {
   if (rows.length === 0) {
@@ -228,53 +218,16 @@ async function ensureTopicSessionEntry(params: {
   );
 }
 
-async function launchTopicTerminal(command: string): Promise<boolean> {
-  if (process.platform === "darwin") {
-    const script = `tell application "Terminal" to activate\ntell application "Terminal" to do script "${escapeAppleScript(command)}"`;
-    const result = await runCommandWithTimeout(["osascript", "-e", script], { timeoutMs: 5000 });
-    return result.code === 0;
-  }
-
-  if (process.platform === "win32") {
-    const result = await runCommandWithTimeout(["cmd", "/c", "start", "", "cmd", "/k", command], {
-      timeoutMs: 5000,
-    });
-    return result.code === 0;
-  }
-
-  const launchers: string[][] = [
-    ["x-terminal-emulator", "-e", "sh", "-lc", command],
-    ["gnome-terminal", "--", "bash", "-lc", command],
-    ["konsole", "-e", "bash", "-lc", command],
-    ["xterm", "-e", "sh", "-lc", command],
-  ];
-  for (const argv of launchers) {
-    try {
-      const result = await runCommandWithTimeout(argv, { timeoutMs: 5000 });
-      if (result.code === 0) {
-        return true;
-      }
-    } catch {
-      // Try next launcher.
-    }
-  }
-  return false;
-}
-
 function buildTopicTuiCommand(params: {
   cwd: string;
   sessionKey: string;
   initialMessage?: string;
 }): string {
-  const hasLocalCliEntry = fs.existsSync(path.join(params.cwd, "openclaw.mjs"));
-  // Prefer repo-local execution so `openclaw topic <name>` works without a global install.
-  const args = hasLocalCliEntry
-    ? ["node", "./openclaw.mjs", "tui", "--session", params.sessionKey]
-    : ["openclaw", "tui", "--session", params.sessionKey];
+  const args = ["tui", "--session", params.sessionKey];
   if (params.initialMessage?.trim()) {
     args.push("--message", params.initialMessage.trim());
   }
-  return `cd ${shellEscape(params.cwd)} && exec ${args.map(shellEscape).join(" ")}`;
+  return buildSpawnedCliCommand({ cwd: params.cwd, cliArgs: args });
 }
 
 function extractMessageText(content: unknown): string {
@@ -480,7 +433,7 @@ export function registerTopicCli(program: Command) {
         sessionKey,
         initialMessage,
       });
-      const launched = await launchTopicTerminal(launchCommand);
+      const launched = await launchCommandInTerminal(launchCommand);
       if (opts.json === true) {
         defaultRuntime.log(
           JSON.stringify(
