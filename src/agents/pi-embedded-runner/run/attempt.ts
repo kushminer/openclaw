@@ -24,6 +24,7 @@ import { joinPresentTextSegments } from "../../../shared/text/join-segments.js";
 import { resolveSignalReactionLevel } from "../../../signal/reaction-level.js";
 import { resolveTelegramInlineButtonsScope } from "../../../telegram/inline-buttons.js";
 import { resolveTelegramReactionLevel } from "../../../telegram/reaction-level.js";
+import { buildTopicSessionWorkspaceNotes } from "../../../topics/branch-sync.js";
 import { buildTtsSystemPromptHint } from "../../../tts/tts.js";
 import { resolveUserPath } from "../../../utils.js";
 import { normalizeMessageChannel } from "../../../utils/message-channel.js";
@@ -47,6 +48,7 @@ import { ensureCustomApiRegistered } from "../../custom-api-registry.js";
 import { DEFAULT_CONTEXT_TOKENS } from "../../defaults.js";
 import { resolveOpenClawDocsPath } from "../../docs-path.js";
 import { isTimeoutError } from "../../failover-error.js";
+import { buildAgentFamilyWorkspaceNotes } from "../../family-soul.js";
 import { resolveImageSanitizationLimits } from "../../image-sanitization.js";
 import { resolveModelAuthMode } from "../../model-auth.js";
 import { normalizeProviderId, resolveDefaultModelForAgent } from "../../model-selection.js";
@@ -822,11 +824,21 @@ export async function runEmbeddedAttempt(
       seenSignatures: params.bootstrapPromptWarningSignaturesSeen,
       previousSignature: params.bootstrapPromptWarningSignature,
     });
-    const workspaceNotes = hookAdjustedBootstrapFiles.some(
-      (file) => file.name === DEFAULT_BOOTSTRAP_FILENAME && !file.missing,
-    )
-      ? ["Reminder: commit your changes in this workspace after edits."]
-      : undefined;
+    const workspaceNotes: string[] = [];
+    if (
+      hookAdjustedBootstrapFiles.some(
+        (file) => file.name === DEFAULT_BOOTSTRAP_FILENAME && !file.missing,
+      )
+    ) {
+      workspaceNotes.push("Reminder: commit your changes in this workspace after edits.");
+    }
+    const topicNotes = await buildTopicSessionWorkspaceNotes({
+      workspaceDir: effectiveWorkspace,
+      sessionKey: params.sessionKey,
+    });
+    if (topicNotes?.length) {
+      workspaceNotes.push(...topicNotes);
+    }
 
     const agentDir = params.agentDir ?? resolveOpenClawAgentDir();
 
@@ -943,6 +955,13 @@ export async function runEmbeddedAttempt(
             return undefined;
           })()
         : undefined;
+    const familyWorkspaceNotes = buildAgentFamilyWorkspaceNotes({
+      config: params.config,
+      agentId: sessionAgentId,
+    });
+    if (familyWorkspaceNotes?.length) {
+      workspaceNotes.unshift(...familyWorkspaceNotes);
+    }
     const sandboxInfo = buildEmbeddedSandboxInfo(sandbox, params.bashElevated);
     const reasoningTagHint = isReasoningTagProvider(params.provider);
     // Resolve channel-specific message actions for system prompt
@@ -1009,7 +1028,7 @@ export async function runEmbeddedAttempt(
       skillsPrompt,
       docsPath: docsPath ?? undefined,
       ttsHint,
-      workspaceNotes,
+      workspaceNotes: workspaceNotes.length > 0 ? workspaceNotes : undefined,
       reactionGuidance,
       promptMode,
       acpEnabled: params.config?.acp?.enabled !== false,

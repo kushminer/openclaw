@@ -46,6 +46,7 @@ export function buildSystemPrompt(params: {
   ownerNumbers?: string[];
   heartbeatPrompt?: string;
   docsPath?: string;
+  workspaceNotes?: string[];
   tools: AgentTool[];
   contextFiles?: EmbeddedContextFile[];
   bootstrapTruncationWarningLines?: string[];
@@ -91,6 +92,7 @@ export function buildSystemPrompt(params: {
     userTimezone,
     userTime,
     userTimeFormat,
+    workspaceNotes: params.workspaceNotes,
     contextFiles: params.contextFiles,
     bootstrapTruncationWarningLines: params.bootstrapTruncationWarningLines,
     ttsHint,

@@ -7,8 +7,11 @@ import {
 } from "../agents/agent-scope.js";
 import { ensureAuthProfileStore } from "../agents/auth-profiles.js";
 import { resolveAuthStorePath } from "../agents/auth-profiles/paths.js";
+import { normalizeAgentSoulPurpose, upsertAgentFamilySoulFile } from "../agents/family-soul.js";
+import { DEFAULT_USER_FILENAME } from "../agents/workspace.js";
 import { writeConfigFile } from "../config/config.js";
 import { logConfigUpdated } from "../config/logging.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { DEFAULT_AGENT_ID, normalizeAgentId } from "../routing/session-key.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { defaultRuntime } from "../runtime.js";
@@ -33,6 +36,7 @@ type AgentsAddOptions = {
   name?: string;
   workspace?: string;
   model?: string;
+  purpose?: string;
   agentDir?: string;
   bind?: string[];
   nonInteractive?: boolean;
@@ -42,6 +46,53 @@ type AgentsAddOptions = {
 async function fileExists(pathname: string): Promise<boolean> {
   try {
     await fs.stat(pathname);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Copy USER.md from the primary agent workspace if it has been customized
+ * (i.e., differs from the generic template) and the new workspace still has
+ * the template version. This gives new agents baseline context about the user.
+ */
+async function maybeCopyUserContext(params: {
+  config: OpenClawConfig;
+  agentId: string;
+  newWorkspaceDir: string;
+  runtime: RuntimeEnv;
+}): Promise<boolean> {
+  const { config, agentId, newWorkspaceDir, runtime } = params;
+  const defaultAgentId = resolveDefaultAgentId(config);
+  if (defaultAgentId === agentId) {
+    return false;
+  }
+  const primaryWorkspace = resolveAgentWorkspaceDir(config, defaultAgentId);
+  const primaryUserPath = path.join(primaryWorkspace, DEFAULT_USER_FILENAME);
+  const newUserPath = path.join(newWorkspaceDir, DEFAULT_USER_FILENAME);
+
+  try {
+    const [primaryContent, newContent] = await Promise.all([
+      fs.readFile(primaryUserPath, "utf-8").catch(() => null),
+      fs.readFile(newUserPath, "utf-8").catch(() => null),
+    ]);
+
+    // Only copy if primary USER.md exists and has been customized,
+    // and the new agents USER.md is still the default template (has empty Name field)
+    if (!primaryContent || !newContent) {
+      return false;
+    }
+    const isNewTemplate =
+      newContent.includes("- **Name:**\n") || newContent.includes("- **Name:** \n");
+    const isPrimaryCustomized =
+      !primaryContent.includes("- **Name:**\n") || primaryContent.length > newContent.length + 50;
+    if (!isNewTemplate || !isPrimaryCustomized) {
+      return false;
+    }
+
+    await fs.writeFile(newUserPath, primaryContent, "utf-8");
+    runtime.log(`Copied USER.md from primary agent "${defaultAgentId}".`);
     return true;
   } catch {
     return false;
@@ -104,6 +155,7 @@ export async function agentsAddCommand(
       ? resolveUserPath(opts.agentDir.trim())
       : resolveAgentDir(cfg, agentId);
     const model = opts.model?.trim();
+    const purpose = normalizeAgentSoulPurpose(opts.purpose);
     const nextConfig = applyAgentConfig(cfg, {
       agentId,
       name: nameInput,
@@ -137,12 +189,30 @@ export async function agentsAddCommand(
       agentId,
     });
 
+    // Copy USER.md from primary agent if available and customized.
+    await maybeCopyUserContext({
+      config: bindingResult.config,
+      agentId,
+      newWorkspaceDir: workspaceDir,
+      runtime: quietRuntime,
+    });
+    const soulResult = await upsertAgentFamilySoulFile({
+      workspaceDir,
+      config: bindingResult.config,
+      agentId,
+      purpose,
+      bornAtIso: new Date().toISOString(),
+      isNewborn: true,
+    });
+
     const payload = {
       agentId,
       name: nameInput,
       workspace: workspaceDir,
       agentDir,
       model,
+      purpose: soulResult.purpose,
+      soulPath: soulResult.soulPath,
       bindings: {
         added: bindingResult.added.map(describeBinding),
         updated: bindingResult.updated.map(describeBinding),
@@ -160,6 +230,10 @@ export async function agentsAddCommand(
       runtime.log(`Agent dir: ${shortenHomePath(agentDir)}`);
       if (model) {
         runtime.log(`Model: ${model}`);
+      }
+      runtime.log(`Soul: ${shortenHomePath(soulResult.soulPath)}`);
+      if (soulResult.purpose) {
+        runtime.log(`Purpose: ${soulResult.purpose}`);
       }
       if (bindingResult.conflicts.length > 0) {
         runtime.error(
@@ -222,6 +296,11 @@ export async function agentsAddCommand(
       validate: (value) => (value?.trim() ? undefined : "Required"),
     });
     const workspaceDir = resolveUserPath(String(workspaceInput ?? "").trim() || workspaceDefault);
+    const purposeInput = await prompter.text({
+      message: "Soul purpose (optional)",
+      initialValue: normalizeAgentSoulPurpose(opts.purpose) ?? "",
+    });
+    const purpose = normalizeAgentSoulPurpose(purposeInput);
     const agentDir = resolveAgentDir(cfg, agentId);
 
     let nextConfig = applyAgentConfig(cfg, {
@@ -348,11 +427,42 @@ export async function agentsAddCommand(
       agentId,
     });
 
+    // Offer to copy USER.md from primary agent if available and customized.
+    const primaryAgentId = resolveDefaultAgentId(nextConfig);
+    if (primaryAgentId !== agentId) {
+      const primaryWorkspace = resolveAgentWorkspaceDir(nextConfig, primaryAgentId);
+      const primaryUserPath = path.join(primaryWorkspace, DEFAULT_USER_FILENAME);
+      if (await fileExists(primaryUserPath)) {
+        const shouldCopyUser = await prompter.confirm({
+          message: "Copy USER.md from primary agent? (gives baseline context about you)",
+          initialValue: true,
+        });
+        if (shouldCopyUser) {
+          await maybeCopyUserContext({
+            config: nextConfig,
+            agentId,
+            newWorkspaceDir: workspaceDir,
+            runtime,
+          });
+        }
+      }
+    }
+    const soulResult = await upsertAgentFamilySoulFile({
+      workspaceDir,
+      config: nextConfig,
+      agentId,
+      purpose,
+      bornAtIso: existingAgent ? undefined : new Date().toISOString(),
+      isNewborn: !existingAgent,
+    });
+
     const payload = {
       agentId,
       name: agentName,
       workspace: workspaceDir,
       agentDir,
+      purpose: soulResult.purpose,
+      soulPath: soulResult.soulPath,
     };
     if (opts.json) {
       runtime.log(JSON.stringify(payload, null, 2));

@@ -5,6 +5,11 @@ import { resolveStateDir } from "../config/paths.js";
 import type { SecretInput } from "../config/types.secrets.js";
 import { clampInt, clampNumber, resolveUserPath } from "../utils.js";
 import { resolveAgentConfig } from "./agent-scope.js";
+import {
+  DEFAULT_MEMORY_ALT_FILENAME,
+  DEFAULT_MEMORY_FILENAME,
+  resolveSharedDir,
+} from "./workspace.js";
 
 export type ResolvedMemorySearchConfig = {
   enabled: boolean;
@@ -101,6 +106,16 @@ const DEFAULT_TEMPORAL_DECAY_ENABLED = false;
 const DEFAULT_TEMPORAL_DECAY_HALF_LIFE_DAYS = 30;
 const DEFAULT_CACHE_ENABLED = true;
 const DEFAULT_SOURCES: Array<"memory" | "sessions"> = ["memory"];
+const DEFAULT_MEMORY_DIRNAME = "memory";
+
+function resolveDefaultExtraPaths(): string[] {
+  const sharedDir = resolveSharedDir();
+  return [
+    path.join(sharedDir, DEFAULT_MEMORY_FILENAME),
+    path.join(sharedDir, DEFAULT_MEMORY_ALT_FILENAME),
+    path.join(sharedDir, DEFAULT_MEMORY_DIRNAME),
+  ];
+}
 
 function normalizeSources(
   sources: Array<"memory" | "sessions"> | undefined,
@@ -198,7 +213,11 @@ function mergeConfig(
     modelCacheDir: overrides?.local?.modelCacheDir ?? defaults?.local?.modelCacheDir,
   };
   const sources = normalizeSources(overrides?.sources ?? defaults?.sources, sessionMemory);
-  const rawPaths = [...(defaults?.extraPaths ?? []), ...(overrides?.extraPaths ?? [])]
+  const rawPaths = [
+    ...(defaults?.extraPaths ?? []),
+    ...(overrides?.extraPaths ?? []),
+    ...resolveDefaultExtraPaths(),
+  ]
     .map((value) => value.trim())
     .filter(Boolean);
   const extraPaths = Array.from(new Set(rawPaths));

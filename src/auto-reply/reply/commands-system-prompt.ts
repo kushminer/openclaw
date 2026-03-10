@@ -1,6 +1,7 @@
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { resolveSessionAgentIds } from "../../agents/agent-scope.js";
 import { resolveBootstrapContextForRun } from "../../agents/bootstrap-files.js";
+import { buildAgentFamilyWorkspaceNotes } from "../../agents/family-soul.js";
 import { resolveDefaultModelForAgent } from "../../agents/model-selection.js";
 import type { EmbeddedContextFile } from "../../agents/pi-embedded-helpers.js";
 import { createOpenClawCodingTools } from "../../agents/pi-tools.js";
@@ -12,6 +13,7 @@ import { buildAgentSystemPrompt } from "../../agents/system-prompt.js";
 import { buildToolSummaryMap } from "../../agents/tool-summaries.js";
 import type { WorkspaceBootstrapFile } from "../../agents/workspace.js";
 import { getRemoteSkillEligibility } from "../../infra/skills-remote.js";
+import { buildTopicSessionWorkspaceNotes } from "../../topics/branch-sync.js";
 import { buildTtsSystemPromptHint } from "../../tts/tts.js";
 import type { HandleCommandsParams } from "./commands-types.js";
 
@@ -108,6 +110,15 @@ export async function resolveCommandsSystemPromptBundle(
       }
     : { enabled: false };
   const ttsHint = params.cfg ? buildTtsSystemPromptHint(params.cfg) : undefined;
+  const topicWorkspaceNotes = await buildTopicSessionWorkspaceNotes({
+    workspaceDir,
+    sessionKey: params.sessionKey,
+  });
+  const familyWorkspaceNotes = buildAgentFamilyWorkspaceNotes({
+    config: params.cfg,
+    agentId: sessionAgentId,
+  });
+  const workspaceNotes = [...(familyWorkspaceNotes ?? []), ...(topicWorkspaceNotes ?? [])];
 
   const systemPrompt = buildAgentSystemPrompt({
     workspaceDir,
@@ -127,6 +138,7 @@ export async function resolveCommandsSystemPromptBundle(
     heartbeatPrompt: undefined,
     ttsHint,
     acpEnabled: params.cfg?.acp?.enabled !== false,
+    workspaceNotes: workspaceNotes.length > 0 ? workspaceNotes : undefined,
     runtimeInfo,
     sandboxInfo,
     memoryCitationsMode: params.cfg?.memory?.citations,

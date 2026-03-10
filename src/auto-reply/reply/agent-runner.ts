@@ -55,6 +55,7 @@ import { enqueueFollowupRun, type FollowupRun, type QueueSettings } from "./queu
 import { createReplyMediaPathNormalizer } from "./reply-media-paths.js";
 import { createReplyToModeFilterForChannel, resolveReplyToMode } from "./reply-threading.js";
 import { incrementRunCompactionCount, persistRunSessionUsage } from "./session-run-accounting.js";
+import { maybeRunTopicDailySummarySync } from "./topic-daily-sync.js";
 import { createTypingSignaler } from "./typing-mode.js";
 import type { TypingController } from "./typing.js";
 
@@ -696,6 +697,18 @@ export async function runReplyAgent(params: {
       finalPayloads = appendUsageLine(finalPayloads, responseUsageLine);
     }
 
+    activeSessionEntry = await maybeRunTopicDailySummarySync({
+      sessionKey,
+      sessionEntry: activeSessionEntry,
+      sessionStore: activeSessionStore,
+      storePath,
+      mainKey: cfg.session?.mainKey,
+      workspaceDir: followupRun.run.workspaceDir,
+      sessionId: followupRun.run.sessionId,
+      userInput: commandBody,
+      replyPayloads: guardedReplyPayloads,
+      isHeartbeat,
+    });
     return finalizeWithFollowup(
       finalPayloads.length === 1 ? finalPayloads[0] : finalPayloads,
       queueKey,

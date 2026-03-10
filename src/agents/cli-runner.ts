@@ -9,6 +9,7 @@ import { enqueueSystemEvent } from "../infra/system-events.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { getProcessSupervisor } from "../process/supervisor/index.js";
 import { scopedHeartbeatWakeOptions } from "../routing/session-key.js";
+import { buildTopicSessionWorkspaceNotes } from "../topics/branch-sync.js";
 import { resolveSessionAgentIds } from "./agent-scope.js";
 import {
   analyzeBootstrapBudget,
@@ -35,6 +36,7 @@ import {
 } from "./cli-runner/helpers.js";
 import { resolveOpenClawDocsPath } from "./docs-path.js";
 import { FailoverError, resolveFailoverStatus } from "./failover-error.js";
+import { buildAgentFamilyWorkspaceNotes } from "./family-soul.js";
 import {
   classifyFailoverReason,
   isFailoverErrorMessage,
@@ -144,6 +146,15 @@ export async function runCliAgent(params: {
     cwd: process.cwd(),
     moduleUrl: import.meta.url,
   });
+  const topicWorkspaceNotes = await buildTopicSessionWorkspaceNotes({
+    workspaceDir,
+    sessionKey: params.sessionKey,
+  });
+  const familyWorkspaceNotes = buildAgentFamilyWorkspaceNotes({
+    config: params.config,
+    agentId: sessionAgentId,
+  });
+  const workspaceNotes = [...(familyWorkspaceNotes ?? []), ...(topicWorkspaceNotes ?? [])];
   const systemPrompt = buildSystemPrompt({
     workspaceDir,
     config: params.config,
@@ -152,6 +163,7 @@ export async function runCliAgent(params: {
     ownerNumbers: params.ownerNumbers,
     heartbeatPrompt,
     docsPath: docsPath ?? undefined,
+    workspaceNotes: workspaceNotes.length > 0 ? workspaceNotes : undefined,
     tools: [],
     contextFiles,
     bootstrapTruncationWarningLines: bootstrapPromptWarning.lines,

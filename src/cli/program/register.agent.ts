@@ -6,6 +6,7 @@ import {
   agentsBindCommand,
   agentsDeleteCommand,
   agentsListCommand,
+  agentsSetSoulCommand,
   agentsSetIdentityCommand,
   agentsUnbindCommand,
 } from "../../commands/agents.js";
@@ -26,6 +27,7 @@ export function registerAgentCommands(program: Command, args: { agentChannelOpti
     .requiredOption("-m, --message <text>", "Message body for the agent")
     .option("-t, --to <number>", "Recipient number in E.164 used to derive the session key")
     .option("--session-id <id>", "Use an explicit session id")
+    .option("--session-key <key>", "Use an explicit session key (for topic/persistent sessions)")
     .option("--agent <id>", "Agent id (overrides routing bindings)")
     .option("--thinking <level>", "Thinking level: off | minimal | low | medium | high")
     .option("--verbose <on|off>", "Persist agent verbose level for the session")
@@ -172,6 +174,7 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/agent", "docs.openclaw.ai/cli/age
     .description("Add a new isolated agent")
     .option("--workspace <dir>", "Workspace directory for the new agent")
     .option("--model <id>", "Model id for this agent")
+    .option("--purpose <text>", "Initial soul purpose for this agent")
     .option("--agent-dir <dir>", "Agent state directory for this agent")
     .option("--bind <channel[:accountId]>", "Route channel binding (repeatable)", collectOption, [])
     .option("--non-interactive", "Disable prompts; requires --workspace", false)
@@ -181,6 +184,7 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/agent", "docs.openclaw.ai/cli/age
         const hasFlags = hasExplicitOptions(command, [
           "workspace",
           "model",
+          "purpose",
           "agentDir",
           "bind",
           "nonInteractive",
@@ -190,6 +194,7 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/agent", "docs.openclaw.ai/cli/age
             name: typeof name === "string" ? name : undefined,
             workspace: opts.workspace as string | undefined,
             model: opts.model as string | undefined,
+            purpose: opts.purpose as string | undefined,
             agentDir: opts.agentDir as string | undefined,
             bind: Array.isArray(opts.bind) ? (opts.bind as string[]) : undefined,
             nonInteractive: Boolean(opts.nonInteractive),
@@ -197,6 +202,25 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/agent", "docs.openclaw.ai/cli/age
           },
           defaultRuntime,
           { hasFlags },
+        );
+      });
+    });
+
+  agents
+    .command("set-soul")
+    .description("Set/update family soul purpose in an agent's SOUL.md")
+    .option("--agent <id>", "Agent id to update (default: configured default agent)")
+    .requiredOption("--purpose <text>", "Purpose text to persist in SOUL.md")
+    .option("--json", "Output JSON summary", false)
+    .action(async (opts) => {
+      await runCommandWithRuntime(defaultRuntime, async () => {
+        await agentsSetSoulCommand(
+          {
+            agent: opts.agent as string | undefined,
+            purpose: opts.purpose as string | undefined,
+            json: Boolean(opts.json),
+          },
+          defaultRuntime,
         );
       });
     });

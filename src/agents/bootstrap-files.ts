@@ -1,4 +1,8 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import type { OpenClawConfig } from "../config/config.js";
+import { parseTopicSessionKey } from "../topics/session-key.js";
+import { resolveTopicBaseDir } from "../topics/summary-chain.js";
 import { getOrLoadBootstrapFiles } from "./bootstrap-cache.js";
 import { applyBootstrapHookOverrides } from "./bootstrap-hooks.js";
 import type { EmbeddedContextFile } from "./pi-embedded-helpers.js";
@@ -8,6 +12,7 @@ import {
   resolveBootstrapTotalMaxChars,
 } from "./pi-embedded-helpers.js";
 import {
+  DEFAULT_SOUL_FILENAME,
   filterBootstrapFilesForSession,
   loadWorkspaceBootstrapFiles,
   type WorkspaceBootstrapFile,
@@ -84,7 +89,7 @@ export async function resolveBootstrapFilesForRun(params: {
     runKind: params.runKind,
   });
 
-  const updated = await applyBootstrapHookOverrides({
+  const withHooksRaw = await applyBootstrapHookOverrides({
     files: bootstrapFiles,
     workspaceDir: params.workspaceDir,
     config: params.config,
@@ -92,7 +97,37 @@ export async function resolveBootstrapFilesForRun(params: {
     sessionId: params.sessionId,
     agentId: params.agentId,
   });
-  return sanitizeBootstrapFiles(updated, params.warn);
+  const withHooks = sanitizeBootstrapFiles(withHooksRaw, params.warn);
+
+  const topic = parseTopicSessionKey(sessionKey);
+  if (!topic) {
+    return withHooks;
+  }
+
+  const topicSoulPath = path.join(
+    resolveTopicBaseDir(params.workspaceDir, topic.topicSlug),
+    DEFAULT_SOUL_FILENAME,
+  );
+  try {
+    const content = await fs.readFile(topicSoulPath, "utf-8");
+    const exists = withHooks.some(
+      (entry) => path.resolve(entry.path) === path.resolve(topicSoulPath),
+    );
+    if (exists) {
+      return withHooks;
+    }
+    return [
+      ...withHooks,
+      {
+        name: DEFAULT_SOUL_FILENAME,
+        path: topicSoulPath,
+        content,
+        missing: false,
+      },
+    ];
+  } catch {
+    return withHooks;
+  }
 }
 
 export async function resolveBootstrapContextForRun(params: {

@@ -1,8 +1,18 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import { resolveMemorySearchConfig } from "./memory-search.js";
+import { resolveSharedDir } from "./workspace.js";
 
 const asConfig = (cfg: OpenClawConfig): OpenClawConfig => cfg;
+const sharedMemoryPaths = () => {
+  const sharedDir = resolveSharedDir();
+  return [
+    path.join(sharedDir, "MEMORY.md"),
+    path.join(sharedDir, "memory.md"),
+    path.join(sharedDir, "memory"),
+  ];
+};
 
 describe("memory search config", () => {
   function configWithDefaultProvider(
@@ -128,7 +138,37 @@ describe("memory search config", () => {
       },
     });
     const resolved = resolveMemorySearchConfig(cfg, "main");
-    expect(resolved?.extraPaths).toEqual(["/shared/notes", "docs", "../team-notes"]);
+    expect(resolved?.extraPaths).toEqual([
+      "/shared/notes",
+      "docs",
+      "../team-notes",
+      ...sharedMemoryPaths(),
+    ]);
+  });
+
+  it("includes shared family memory paths by default", () => {
+    const resolved = resolveMemorySearchConfig(asConfig({}), "main");
+    expect(resolved?.extraPaths).toEqual(sharedMemoryPaths());
+  });
+
+  it("dedupes shared family memory paths when explicitly configured", () => {
+    const sharedDir = resolveSharedDir();
+    const cfg = asConfig({
+      agents: {
+        defaults: {
+          memorySearch: {
+            extraPaths: [path.join(sharedDir, "MEMORY.md"), path.join(sharedDir, "memory"), "docs"],
+          },
+        },
+      },
+    });
+    const resolved = resolveMemorySearchConfig(cfg, "main");
+    expect(resolved?.extraPaths).toEqual([
+      path.join(sharedDir, "MEMORY.md"),
+      path.join(sharedDir, "memory"),
+      "docs",
+      path.join(sharedDir, "memory.md"),
+    ]);
   });
 
   it("includes batch defaults for openai without remote overrides", () => {

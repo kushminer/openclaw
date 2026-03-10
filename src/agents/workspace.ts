@@ -22,6 +22,20 @@ export function resolveDefaultAgentWorkspaceDir(
 }
 
 export const DEFAULT_AGENT_WORKSPACE_DIR = resolveDefaultAgentWorkspaceDir();
+export const DEFAULT_SHARED_DIR = path.join(resolveRequiredHomeDir(), ".openclaw", "shared");
+
+/**
+ * Resolve the shared family directory that all agents can read from.
+ * Defaults to `~/.openclaw/shared/`.
+ */
+export function resolveSharedDir(
+  env: NodeJS.ProcessEnv = process.env,
+  homedir: () => string = os.homedir,
+): string {
+  const home = resolveRequiredHomeDir(env, homedir);
+  return path.join(home, ".openclaw", "shared");
+}
+
 export const DEFAULT_AGENTS_FILENAME = "AGENTS.md";
 export const DEFAULT_SOUL_FILENAME = "SOUL.md";
 export const DEFAULT_TOOLS_FILENAME = "TOOLS.md";
@@ -334,6 +348,10 @@ export async function ensureAgentWorkspace(params?: {
   const rawDir = params?.dir?.trim() ? params.dir.trim() : DEFAULT_AGENT_WORKSPACE_DIR;
   const dir = resolveUserPath(rawDir);
   await fs.mkdir(dir, { recursive: true });
+
+  // Ensure the shared family directory exists for cross-agent context.
+  const sharedDir = resolveSharedDir();
+  await fs.mkdir(sharedDir, { recursive: true });
 
   if (!params?.ensureBootstrapFiles) {
     return { dir };
