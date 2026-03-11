@@ -91,12 +91,49 @@ describe("talk cli", () => {
     expect(launchCommandInTerminalMock).toHaveBeenCalledTimes(1);
   });
 
+  it("adds a default greeting message when spawning without --message", async () => {
+    await runTalkCommand(["talk", "clio", "--spawn"]);
+
+    expect(runTuiMock).not.toHaveBeenCalled();
+    expect(buildSpawnedCliCommandMock).toHaveBeenCalledTimes(1);
+    expect(buildSpawnedCliCommandMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cliArgs: expect.arrayContaining([
+          "tui",
+          "--session",
+          buildAgentMainSessionKey({ agentId: "clio" }),
+          "--message",
+          "Hi clio! Please introduce yourself and confirm you're ready.",
+        ]),
+      }),
+    );
+    expect(launchCommandInTerminalMock).toHaveBeenCalledTimes(1);
+  });
+
   it("opens one terminal per configured agent with --all", async () => {
     await runTalkCommand(["talk", "--all"]);
 
     expect(runTuiMock).not.toHaveBeenCalled();
     expect(buildSpawnedCliCommandMock).toHaveBeenCalledTimes(2);
     expect(launchCommandInTerminalMock).toHaveBeenCalledTimes(2);
+    expect(buildSpawnedCliCommandMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        cliArgs: expect.arrayContaining([
+          "--message",
+          "Hi clio! Please introduce yourself and confirm you're ready.",
+        ]),
+      }),
+    );
+    expect(buildSpawnedCliCommandMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        cliArgs: expect.arrayContaining([
+          "--message",
+          "Hi wren! Please introduce yourself and confirm you're ready.",
+        ]),
+      }),
+    );
     expect(runtimeLogMock).toHaveBeenCalledWith(
       expect.stringContaining("Opened 2 agent terminals"),
     );
