@@ -1,32 +1,41 @@
-# YYYY-MM-DD - Change title
+# YYYY-MM-DD-NNN - Short Title
 
 ## Summary
 
-One-paragraph summary.
+One paragraph. What shipped and why.
 
-## Why it matters
+## What Changed
 
-Who benefits and what this enables.
+- Bullet list of concrete changes (new commands, config options, behavior shifts).
 
-## How to use
+## How to Use
 
 ```bash
-# Commands users should run
+# Exact commands/config needed
 ```
 
-## Behavior details
+## Impact on Agents
 
-- Key behavior 1
-- Key behavior 2
+How this affects sibling agents (Clio, Wren, etc.):
 
-## Files touched
+- New capabilities unlocked
+- Behavior changes to be aware of
+- Config to update (if any)
 
-- `path/to/file`
+## Constraints / Caveats
+
+What it doesn't do. Known limitations. Things to avoid.
+
+## Files Touched
+
+- `src/...`
 
 ## Validation
 
-- `command run`
+- `pnpm test:fast`
+- `pnpm lint`
+- `pnpm build`
 
 ## Commit
 
-- `<short-hash>` (`<commit message>`)
+- `<hash>` (`<message>`)

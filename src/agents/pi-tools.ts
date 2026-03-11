@@ -44,6 +44,7 @@ import { cleanToolSchemaForGemini, normalizeToolParameters } from "./pi-tools.sc
 import type { AnyAgentTool } from "./pi-tools.types.js";
 import type { SandboxContext } from "./sandbox.js";
 import { isXaiProvider } from "./schema/clean-for-xai.js";
+import { wrapToolWithSharedFamilyMemoryWriteLock } from "./shared-family-memory-write-lock.js";
 import { getSubagentDepthFromSessionStore } from "./subagent-depth.js";
 import { createToolFsPolicy, resolveToolFsConfig } from "./tool-fs-policy.js";
 import {
@@ -379,14 +380,16 @@ export function createOpenClawCodingTools(options?: {
         return [];
       }
       const wrapped = createHostWorkspaceWriteTool(workspaceRoot, { workspaceOnly });
-      return [workspaceOnly ? wrapToolWorkspaceRootGuard(wrapped, workspaceRoot) : wrapped];
+      const lockWrapped = wrapToolWithSharedFamilyMemoryWriteLock(wrapped, { root: workspaceRoot });
+      return [workspaceOnly ? wrapToolWorkspaceRootGuard(lockWrapped, workspaceRoot) : lockWrapped];
     }
     if (tool.name === "edit") {
       if (sandboxRoot) {
         return [];
       }
       const wrapped = createHostWorkspaceEditTool(workspaceRoot, { workspaceOnly });
-      return [workspaceOnly ? wrapToolWorkspaceRootGuard(wrapped, workspaceRoot) : wrapped];
+      const lockWrapped = wrapToolWithSharedFamilyMemoryWriteLock(wrapped, { root: workspaceRoot });
+      return [workspaceOnly ? wrapToolWorkspaceRootGuard(lockWrapped, workspaceRoot) : lockWrapped];
     }
     return [tool];
   });
@@ -446,24 +449,31 @@ export function createOpenClawCodingTools(options?: {
     ...(sandboxRoot
       ? allowWorkspaceWrites
         ? [
-            workspaceOnly
-              ? wrapToolWorkspaceRootGuardWithOptions(
-                  createSandboxedEditTool({ root: sandboxRoot, bridge: sandboxFsBridge! }),
-                  sandboxRoot,
-                  {
+            (() => {
+              const base = createSandboxedEditTool({ root: sandboxRoot, bridge: sandboxFsBridge! });
+              const lockWrapped = wrapToolWithSharedFamilyMemoryWriteLock(base, {
+                root: sandboxRoot,
+              });
+              return workspaceOnly
+                ? wrapToolWorkspaceRootGuardWithOptions(lockWrapped, sandboxRoot, {
                     containerWorkdir: sandbox.containerWorkdir,
-                  },
-                )
-              : createSandboxedEditTool({ root: sandboxRoot, bridge: sandboxFsBridge! }),
-            workspaceOnly
-              ? wrapToolWorkspaceRootGuardWithOptions(
-                  createSandboxedWriteTool({ root: sandboxRoot, bridge: sandboxFsBridge! }),
-                  sandboxRoot,
-                  {
+                  })
+                : lockWrapped;
+            })(),
+            (() => {
+              const base = createSandboxedWriteTool({
+                root: sandboxRoot,
+                bridge: sandboxFsBridge!,
+              });
+              const lockWrapped = wrapToolWithSharedFamilyMemoryWriteLock(base, {
+                root: sandboxRoot,
+              });
+              return workspaceOnly
+                ? wrapToolWorkspaceRootGuardWithOptions(lockWrapped, sandboxRoot, {
                     containerWorkdir: sandbox.containerWorkdir,
-                  },
-                )
-              : createSandboxedWriteTool({ root: sandboxRoot, bridge: sandboxFsBridge! }),
+                  })
+                : lockWrapped;
+            })(),
           ]
         : []
       : []),

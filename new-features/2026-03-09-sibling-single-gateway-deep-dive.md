@@ -16,6 +16,12 @@ Before this change, opening sibling sessions often required manually juggling te
 - Preserved existing default behavior (`talk <agent>` stays in current terminal).
 - Refactored `topic` terminal launching to use the same profile-aware launcher.
 
+## Related sibling capabilities
+
+Sibling memory sharing and topic daily sync are documented separately:
+
+- [2026-03-09 - Sibling memory sharing and topic sync baseline](./2026-03-09-sibling-memory-topic-sync.md)
+
 ## Key CLI behavior
 
 ### 1) Current behavior retained
@@ -85,20 +91,6 @@ This removed duplicated launcher logic in `topic` and keeps future spawn behavio
 - `pnpm vitest run src/cli/talk-cli.test.ts src/cli/terminal-launch.test.ts`
 - `pnpm build`
 - `node openclaw.mjs talk --help`
-
-### Additional follow-up validation
-
-Unexpected duplicate files found locally (untracked):
-
-- `src/cli/talk-cli.test 2.ts`
-- `src/cli/terminal-launch 2.ts`
-- `src/cli/terminal-launch.test 2.ts`
-
-Validation outcome:
-
-- They are byte-identical duplicates of canonical files (matching SHA-256 values).
-- They pass `oxlint --type-aware`.
-- They are intentionally left uncommitted in this docs-only commit.
 
 ## Operational test flow (manual)
 

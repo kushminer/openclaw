@@ -1,8 +1,8 @@
 import crypto from "node:crypto";
+import fs from "node:fs";
 import { cancel, isCancel, text } from "@clack/prompts";
 import type { Command } from "commander";
 import { resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
-import { readSessionMessages } from "../auto-reply/reply/post-compaction-audit.js";
 import { loadConfig } from "../config/config.js";
 import {
   loadSessionStore,
@@ -13,7 +13,7 @@ import {
   updateSessionStore,
 } from "../config/sessions.js";
 import { callGateway } from "../gateway/call.js";
-import { formatTimeAgo } from "../infra/format-time/format-relative.ts";
+import { formatTimeAgo } from "../infra/format-time/format-relative.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import { defaultRuntime } from "../runtime.js";
 import { isRich, theme } from "../terminal/theme.js";
@@ -252,6 +252,23 @@ function extractMessageText(content: unknown): string {
     }
   }
   return textParts.filter(Boolean).join("\n").trim();
+}
+
+function readSessionMessages(
+  sessionFile: string,
+  limit: number,
+): Array<{ role?: unknown; content?: unknown }> {
+  try {
+    const raw = fs.readFileSync(sessionFile, "utf-8");
+    const parsed = JSON.parse(raw) as { messages?: unknown };
+    const messages = Array.isArray(parsed.messages) ? parsed.messages : [];
+    if (limit > 0 && messages.length > limit) {
+      return messages.slice(-limit) as Array<{ role?: unknown; content?: unknown }>;
+    }
+    return messages as Array<{ role?: unknown; content?: unknown }>;
+  } catch {
+    return [];
+  }
 }
 
 function readRecentTurnSummary(params: { sessionFile: string }): {
