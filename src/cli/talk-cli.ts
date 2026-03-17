@@ -40,7 +40,6 @@ function buildTuiCliArgs(params: {
   opts: TalkOptions;
   timeoutMs?: number;
   historyLimit?: number;
-  defaultMessage?: string;
 }): string[] {
   const args = ["tui", "--session", params.sessionKey];
   if (params.opts.url) {
@@ -58,12 +57,8 @@ function buildTuiCliArgs(params: {
   if (params.opts.thinking) {
     args.push("--thinking", params.opts.thinking);
   }
-  const explicitMessage = params.opts.message?.trim();
-  const initialMessage = explicitMessage?.length
-    ? explicitMessage
-    : params.defaultMessage?.trim() || undefined;
-  if (initialMessage) {
-    args.push("--message", initialMessage);
+  if (params.opts.message) {
+    args.push("--message", params.opts.message);
   }
   if (params.timeoutMs !== undefined) {
     args.push("--timeout-ms", String(params.timeoutMs));
@@ -72,10 +67,6 @@ function buildTuiCliArgs(params: {
     args.push("--history-limit", String(params.historyLimit));
   }
   return args;
-}
-
-function buildSpawnGreetingMessage(agentId: string): string {
-  return `Hi ${agentId}! Please introduce yourself and confirm you're ready.`;
 }
 
 export function registerTalkCli(program: Command) {
@@ -144,13 +135,7 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/talk", "docs.openclaw.ai/cli/talk
             const sessionKey = buildAgentMainSessionKey({ agentId });
             const command = buildSpawnedCliCommand({
               cwd: process.cwd(),
-              cliArgs: buildTuiCliArgs({
-                sessionKey,
-                opts,
-                timeoutMs,
-                historyLimit,
-                defaultMessage: buildSpawnGreetingMessage(agentId),
-              }),
+              cliArgs: buildTuiCliArgs({ sessionKey, opts, timeoutMs, historyLimit }),
             });
             const launched = await launchCommandInTerminal(command);
             launches.push({ agentId, command, launched });
@@ -220,13 +205,7 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/talk", "docs.openclaw.ai/cli/talk
         if (opts.spawn === true) {
           const command = buildSpawnedCliCommand({
             cwd: process.cwd(),
-            cliArgs: buildTuiCliArgs({
-              sessionKey,
-              opts,
-              timeoutMs,
-              historyLimit,
-              defaultMessage: buildSpawnGreetingMessage(agentId),
-            }),
+            cliArgs: buildTuiCliArgs({ sessionKey, opts, timeoutMs, historyLimit }),
           });
           const launched = await launchCommandInTerminal(command);
           if (launched) {
